@@ -1,0 +1,51 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+{% block title %}Visual plot editor | Plot Matrix{% endblock %}
+{% block extrastyle %}{{ block.super }}<link rel="stylesheet" href="{% static 'estate/map.css' %}">{% endblock %}
+{% block content %}
+<a href="{% url 'admin:estate_projectlayout_changelist' %}" class="pm-editor-crumb">← Back to layout revisions</a>
+<div id="plot-editor" class="pm-explorer pm-editor" aria-label="Visual plot editor">
+  <div class="pm-editor-title"><h1>Society plot editor</h1><p>Trace the actual plot boundaries on this revision. Changes are published only when you save a plot.</p></div>
+  <div class="pm-map-toolbar"><div class="pm-map-title"><span class="pm-eyebrow">MANUAL BOUNDARY ANNOTATION</span><h3>{{ project.name }}</h3></div><input id="editor-search" class="pm-search" type="search" placeholder="Find plot number…" aria-label="Find a plot by number"></div>
+  <div class="pm-editor-toolbar" role="toolbar" aria-label="Plot drawing tools">
+    <button type="button" class="pm-button active" data-tool="select">↖ Select / pan</button>
+    <button type="button" class="pm-button" data-tool="draw">◇ Draw a plot</button>
+    <button type="button" class="pm-button" id="close-polygon">✓ Close polygon</button>
+    <button type="button" class="pm-button" data-tool="label">⌖ Move label</button>
+    <button type="button" class="pm-button" id="editor-undo">↶ Undo</button>
+    <button type="button" class="pm-button" id="editor-redo">↷ Redo</button>
+    <button type="button" class="pm-button" id="editor-focus">Zoom to plot</button>
+    <button type="button" class="pm-button" id="editor-draft">Save local draft</button>
+  </div>
+  <div class="pm-map-main"><div id="editor-stage" class="pm-stage"></div>
+    <aside class="pm-details">
+      <span class="pm-eyebrow" id="editor-heading">NEW PLOT</span>
+      <p class="pm-editor-help">Choose Draw a plot, then click each corner. Click the first point or Close polygon to finish. Drag white handles to adjust vertices. Alt + drag pans while drawing.</p>
+      <form id="plot-editor-form" class="pm-editor-form">
+        {% csrf_token %}
+        <div class="pm-editor-grid">
+          <div><label for="plot-number">Plot number *</label><input id="plot-number" name="number" required maxlength="30" autocomplete="off"></div>
+          <div><label for="plot-status">Status</label><select id="plot-status" name="status"><option value="available">Available</option><option value="booked">Booked</option><option value="sold">Sold</option><option value="blocked">Not for sale</option><option value="hidden">Hidden</option></select></div>
+          <div><label for="plot-area">Area</label><input id="plot-area" name="area" type="number" min="0.01" step="0.01"></div>
+          <div><label for="plot-unit">Area unit</label><select id="plot-unit" name="area_unit"><option value="sqyd">Square yards</option><option value="sqft">Square feet</option><option value="sqm">Square metres</option></select></div>
+          <div><label for="plot-length">Length (ft)</label><input id="plot-length" name="length" type="number" min="0.01" step="0.01"></div>
+          <div><label for="plot-width">Width (ft)</label><input id="plot-width" name="width" type="number" min="0.01" step="0.01"></div>
+          <div><label for="plot-facing">Facing</label><select id="plot-facing" name="facing"><option value="">Not specified</option><option>North</option><option>East</option><option>South</option><option>West</option><option>North East</option><option>North West</option><option>South East</option><option>South West</option></select></div>
+          <div><label for="plot-road">Road width (ft)</label><input id="plot-road" name="road_width" type="number" min="0.01" step="0.01"></div>
+        </div>
+        <label for="plot-price">Price (₹)</label><input id="plot-price" name="price" type="number" min="0" step="0.01">
+        <label class="pm-checkbox"><input name="price_visible" type="checkbox"> Show price publicly</label>
+        <div class="pm-editor-grid"><label class="pm-checkbox"><input name="corner" type="checkbox"> Corner plot</label><label class="pm-checkbox"><input name="park_facing" type="checkbox"> Park facing</label></div>
+        <label for="plot-description">Public description</label><textarea id="plot-description" name="description" maxlength="3000"></textarea>
+        <label for="plot-note">Staff note for this change (private)</label><textarea id="plot-note" name="note" maxlength="1000"></textarea>
+        <button type="submit" id="editor-save" class="pm-button pm-primary">Save plot & availability</button>
+        <button type="button" id="editor-delete" class="pm-button pm-danger" hidden>Delete this plot</button>
+      </form>
+      <details><summary>Bulk availability changes</summary><p class="pm-editor-help">Select saved plots below, then apply a status. Every change is audited.</p><div id="editor-plot-list" class="pm-editor-list"></div><div class="pm-editor-bulk"><select id="bulk-status" aria-label="Bulk plot status"><option value="available">Available</option><option value="booked">Booked</option><option value="sold">Sold</option><option value="blocked">Not for sale</option><option value="hidden">Hidden</option></select><button type="button" class="pm-button" id="editor-bulk">Apply to selected</button></div></details>
+    </aside>
+  </div>
+  <div id="editor-message" class="pm-editor-message" role="status" aria-live="polite">Select an existing plot or draw its boundaries to begin.</div>
+</div>
+{{ editor_config|json_script:"editor-config" }}
+<script src="{% static 'estate/map.js' %}" defer></script><script src="{% static 'estate/editor.js' %}" defer></script>
+{% endblock %}

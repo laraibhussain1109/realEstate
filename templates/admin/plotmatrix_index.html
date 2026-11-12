@@ -1,0 +1,7 @@
+{% extends 'admin/index.html' %}
+{% block content %}
+{% if plotmatrix_metrics %}<section aria-label="Business overview" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:12px;margin-bottom:25px">{% for label,value in plotmatrix_metrics.items %}<div style="background:var(--darkened-bg);border:1px solid var(--hairline-color);border-radius:8px;padding:16px"><strong style="font-size:25px;display:block">{{ value }}</strong><span>{{ label }}</span></div>{% endfor %}</section>{% endif %}
+{% if recent_enquiries %}<div class="module"><h2>Recent enquiries</h2><table style="width:100%">{% for lead in recent_enquiries %}<tr><td><a href="{% url 'admin:estate_enquiry_change' lead.pk %}">{{ lead.name }}</a></td><td>{{ lead.get_kind_display }}</td><td>{{ lead.get_status_display }}</td><td>{{ lead.created_at|date:'d M Y, H:i' }}</td></tr>{% endfor %}</table></div>{% endif %}
+{% if recent_plots %}<div class="module"><h2>Recently updated plots</h2><table style="width:100%">{% for plot in recent_plots %}<tr><td><a href="{% url 'admin:estate_plot_change' plot.pk %}">{{ plot.number }}</a></td><td>{{ plot.project }}</td><td>{{ plot.get_status_display }}</td></tr>{% endfor %}</table></div>{% endif %}
+{{ block.super }}
+{% endblock %}
