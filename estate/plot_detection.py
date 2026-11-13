@@ -1,7 +1,7 @@
 """Local, bounded suggestions for plot boundaries in raster site plans.
 
 This module does not identify surveyed land, approvals, prices or availability.
-It finds enclosed image regions and rejects common road/background shapes.
+It suggests only four-sided enclosed regions and rejects common road/background shapes.
 Every result must be reviewed against the original plan before it is saved.
 """
 from __future__ import annotations
@@ -103,6 +103,65 @@ def _segments(rgb, options):
     return edges, labels, stats, centroids, count
 
 
+def _four_corner_fit(contour):
+    """Return a quadrilateral only when it follows the observed boundary.
+
+    Raster stair steps and one/two-pixel scan artifacts may add vertices to a
+    genuine straight edge. They can be removed, but a true extra corner cannot
+    be replaced with the corners of its enclosing rectangle. Both enclosed area
+    and the worst boundary deviation must agree with the original contour.
+    """
+    area=float(cv2.contourArea(contour))
+    hull_area=float(cv2.contourArea(cv2.convexHull(contour)))
+    if area<=0 or hull_area<=0:
+        return None
+    perimeter=cv2.arcLength(contour,True)
+    # A one-pixel notch is a large percentage of a ten-pixel-high plot.
+    # Bound missing hull area in pixel units as well as testing edge distance.
+    if area/hull_area<.97 and hull_area-area>perimeter*1.25:
+        return None
+    _,_,w,h=cv2.boundingRect(contour)
+    tolerance=max(1.5,min(2.5,math.hypot(w,h)*.007))
+    fits=[]
+    # Explore small simplifications, then check every observed boundary point.
+    # The fit checks, rather than a permissive epsilon, decide acceptance.
+    for fraction in [.001,.002,.003,.004,.006,.008,.012,.018,.025]:
+        approximation=cv2.approxPolyDP(contour,max(.5,perimeter*fraction),True)
+        if len(approximation)==4:
+            fits.append(approximation.astype(np.float32))
+    # A minimum-area rectangle is only a fit proposal. It receives the same
+    # strict area and boundary checks as a trapezoid/parallelogram proposal.
+    fits.append(cv2.boxPoints(cv2.minAreaRect(contour)).reshape((-1,1,2)))
+    best=None
+    for quad in fits:
+        quad=quad.reshape((-1,1,2)).astype(np.float32)
+        if not cv2.isContourConvex(quad):
+            continue
+        quad_area=float(cv2.contourArea(quad))
+        allowed_area_error=max(.045,min(.30,perimeter/area))
+        if abs(quad_area-area)/area>allowed_area_error:
+            continue
+        # Reject collapsed/sliver corners, including a triangle with a redundant
+        # fourth point inserted along one of its edges.
+        points=quad[:,0,:]
+        if any(np.linalg.norm(points[i]-points[(i+1)%4])<3 for i in range(4)):
+            continue
+        worst=0.
+        for point in contour[:,0,:]:
+            worst=max(worst,abs(cv2.pointPolygonTest(quad,(float(point[0]),float(point[1])),True)))
+            if worst>tolerance:
+                break
+        if worst>tolerance:
+            continue
+        for point in points:
+            worst=max(worst,abs(cv2.pointPolygonTest(contour,(float(point[0]),float(point[1])),True)))
+        if worst>tolerance:
+            continue
+        score=worst+abs(quad_area-area)/area
+        if best is None or score<best[0]:
+            best=(score,quad)
+    return best[1] if best else None
+
 def _region(labels, stats, index, rgb, width, height, options):
     x, y, w, h, pixels = [int(v) for v in stats[index]]
     working_h, working_w = labels.shape
@@ -122,9 +181,8 @@ def _region(labels, stats, index, rgb, width, height, options):
     if area < minimum:
         return None
     perimeter = cv2.arcLength(contour,True)
-    epsilon = max(.7, min(3.5, perimeter*options['simplify']))
-    approximation = cv2.approxPolyDP(contour,epsilon,True)
-    if len(approximation) < 3 or len(approximation) > 150:
+    approximation = _four_corner_fit(contour)
+    if approximation is None:
         return None
     hull_area = cv2.contourArea(cv2.convexHull(contour)) or 1
     solidity = area/hull_area
@@ -139,7 +197,7 @@ def _region(labels, stats, index, rgb, width, height, options):
     polygon = [[round((float(point[0][0])+x)*scale_x,2),round((float(point[0][1])+y)*scale_y,2)] for point in approximation]
     centroid = [round((x+w/2)*scale_x,2),round((y+h/2)*scale_y,2)]
     return {'polygon':polygon,'confidence':0.,'suggested_number':None,
-            'reason':'Enclosed image boundary; verify its corners and label.',
+            'reason':'Four-sided image boundary; verify its four corners and label.',
             'source':'closed_boundary','centroid':centroid,
             '_area':area,'_pixels':pixels,'_ratio':ratio,'_solidity':solidity,
             '_extent':extent,'_aspect':aspect,'_hue':hue,'_saturation':saturation,
@@ -155,7 +213,7 @@ def _classification(region, median_area, options):
     low_sat = saturation < 135
     # Long neutral strips and branching neutral networks are usually roads.
     # A small, compact dark/blue plot is kept; fill color never means status.
-    if low_sat and ((aspect > 6 and area > 120) or (extent < .42 and ratio > .003)):
+    if low_sat and ((aspect > 6 and area > 120) or (extent < .42 and ratio > .003 and region['_solidity'] < .90)):
         return 'road','Long or branching neutral region resembles a road; excluded from plot suggestions.'
     if region['_occupancy'] < .38:
         return 'background','Mostly hollow linework or a frame, rather than an individual plot interior.'
@@ -325,7 +383,7 @@ def detect_plot_regions(image,options=None):
     options=_options(options)
     rgb,width,height=_prepare(image,options)
     edges,labels,stats,centroids,count=_segments(rgb,options)
-    warnings=['Review all suggested boundaries. Image analysis cannot verify surveyed boundaries, plot ownership or availability.']
+    warnings=['Only four-sided plots are suggested automatically. Review all four corners; image analysis cannot verify surveyed boundaries, plot ownership or availability.']
     regions=[]
     # Only bounded large components enter Python contour extraction.
     indices=np.argsort(stats[1:,cv2.CC_STAT_AREA])[::-1][:MAX_COMPONENTS]+1
@@ -372,7 +430,7 @@ def detect_plot_regions(image,options=None):
         candidates=candidates[:options['max_candidates']]
     candidates=[_public(region) for region in candidates]
     if options['ocr']:_ocr(rgb,candidates,warnings,width,height)
-    if not candidates:warnings.append('No closed plot boundaries were found. Try a sharper plan, lower edge threshold, or click inside an enclosed plot.')
+    if not candidates:warnings.append('No closed four-sided plot boundaries were found. Try a sharper plan or click inside a four-sided plot. Other shapes require the manual polygon tool.')
     return {'candidates':candidates,'excluded_regions':excluded[:100],'warnings':warnings,'width':width,'height':height,
             'processing_size':[rgb.shape[1],rgb.shape[0]],'elapsed_ms':round((time.monotonic()-started)*1000)}
 
@@ -406,12 +464,14 @@ def detect_region_at_point(image,x,y,options=None):
     compact=[r['_area'] for r in all_color if r['_aspect']<4 and r['_solidity']>.7 and r['_ratio']<options['max_area_ratio'] and r['_area']>150]
     median=float(np.median(compact)) if compact else max(100,rgb.shape[0]*rgb.shape[1]*.002)
     for region in all_color:
-        if cv2.pointPolygonTest(np.asarray(region['polygon'],np.float32),(float(x),float(y)),True)>=-5:
+        if cv2.pointPolygonTest(np.asarray(region['polygon'],np.float32),(float(x),float(y)),False)>=0:
             regions.append(region)
     regions.sort(key=lambda r:(cv2.pointPolygonTest(np.asarray(r['polygon'],np.float32),(float(x),float(y)),False)<0,r['source']!='color_boundary',r['_area']))
     warnings=['Review the suggested boundary against the original image before adding it. No availability or legal boundary has been inferred.']
     excluded=[]
     for region in regions:
+        if cv2.pointPolygonTest(np.asarray(region['polygon'],np.float32),(float(x),float(y)),False)<0:
+            continue
         kind,reason=_classification(region,median,options)
         if kind:
             excluded.append({'polygon':region['polygon'],'kind':kind,'reason':reason})
@@ -420,5 +480,5 @@ def detect_region_at_point(image,x,y,options=None):
         candidate=_public(region)
         if options['ocr']:_ocr(rgb,[candidate],warnings,width,height)
         return {'candidates':[candidate],'excluded_regions':excluded,'warnings':warnings,'width':width,'height':height}
-    warnings.append('No enclosed plot was found at this point. Roads, outside margins and large open regions are excluded. Try clicking the plot interior or use the polygon tool.')
+    warnings.append('No enclosed four-sided plot was found at this point. Other shapes, roads and open regions are excluded. Try the plot interior or use the manual polygon tool.')
     return {'candidates':[],'excluded_regions':excluded,'warnings':warnings,'width':width,'height':height}

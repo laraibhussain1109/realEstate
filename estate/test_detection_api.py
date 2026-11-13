@@ -3,6 +3,7 @@
 Computer vision output is a preview; only an explicit, authorized import may
 create inventory. These tests use a generated plan image, not a detector mock.
 """
+import hashlib
 import io
 import json
 import tempfile
@@ -10,6 +11,7 @@ import tempfile
 from PIL import Image, ImageDraw
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
+from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase, override_settings
 
@@ -129,6 +131,7 @@ class DetectionApiTests(TestCase):
         self.assertGreater(len(candidates),0)
         for candidate in candidates:
             validate_polygon(candidate['polygon'])
+            self.assertEqual(len(candidate['polygon']),4)
             self.assertTrue(all(0 <= x <= self.layout.width and 0 <= y <= self.layout.height for x,y in candidate['polygon']))
         self.assertFalse(Plot.objects.exists())
         self.assertFalse(PlotStatusHistory.objects.exists())
@@ -165,6 +168,7 @@ class DetectionApiTests(TestCase):
         candidate = payload.get('candidate') or payload.get('candidates',[None])[0]
         self.assertIsNotNone(candidate)
         validate_polygon(candidate['polygon'])
+        self.assertEqual(len(candidate['polygon']),4)
         self.assertFalse(Plot.objects.exists())
         self.assertFalse(PlotStatusHistory.objects.exists())
 
@@ -278,13 +282,64 @@ class DetectionApiTests(TestCase):
         self.assertEqual(response.status_code,201,response.content)
         self.assertEqual(Plot.objects.count(),2)
 
-    def test_import_allows_adjacent_irregular_plots_sharing_a_diagonal(self):
+    def test_import_allows_adjacent_quadrilaterals_sharing_a_slanted_edge(self):
         self.login()
-        first = self.candidate(number='FIRST',polygon=[[10,10],[110,10],[110,110]])
-        second = self.candidate(number='NEIGHBOUR',polygon=[[10,10],[110,110],[10,110]])
+        first = self.candidate(number='FIRST',polygon=[[10,10],[100,10],[120,110],[10,110]])
+        second = self.candidate(number='NEIGHBOUR',polygon=[[100,10],[210,10],[210,110],[120,110]])
         response = self.post({'action':'import','candidates':[first,second]})
         self.assertEqual(response.status_code,201,response.content)
         self.assertEqual(Plot.objects.count(),2)
+
+    def test_auto_import_rejects_valid_triangle_or_pentagon_atomically(self):
+        self.login()
+        for polygon in ([[130,20],[220,20],[170,100]],[[130,20],[200,20],[220,60],[190,100],[130,90]]):
+            with self.subTest(vertices=len(polygon)):
+                # The shapes themselves are valid; auto import specifically
+                # accepts four corners while manual polygon editing stays general.
+                validate_polygon(polygon)
+                response = self.post({'action':'import','candidates':[self.candidate(number='VALID-QUAD'),self.candidate(number='NON-QUAD',polygon=polygon)]})
+                self.assertEqual(response.status_code,400,response.content)
+                self.assertFalse(Plot.objects.exists())
+                self.assertFalse(PlotStatusHistory.objects.exists())
+
+    def test_auto_import_rejects_triangle_disguised_by_a_collinear_fourth_point(self):
+        self.login()
+        polygon = [[20,20],[100,20],[100,60],[100,100]]
+        validate_polygon(polygon)
+        response = self.post({'action':'import','candidates':[self.candidate(number='NOT-FOUR-CORNERS',polygon=polygon)]})
+        self.assertEqual(response.status_code,400,response.content)
+        self.assertFalse(Plot.objects.exists())
+
+    def test_manual_editor_still_accepts_real_five_corner_plot_boundaries(self):
+        self.login()
+        polygon = [[130,20],[200,20],[220,60],[190,100],[130,90]]
+        response = self.client.post(f'/api/layouts/{self.layout.pk}/plots/',data=json.dumps({'action':'save','plot':{'number':'MANUAL-FIVE','polygon':polygon,'status':'blocked'}}),content_type='application/json')
+        self.assertEqual(response.status_code,200,response.content)
+        self.assertEqual(Plot.objects.get(number='MANUAL-FIVE').polygon,polygon)
+
+    def test_auto_import_preserves_a_valid_four_corner_trapezoid(self):
+        self.login()
+        polygon = [[20,130],[100,130],[85,210],[20,210]]
+        response = self.post({'action':'import','candidates':[self.candidate(number='TRAPEZOID',polygon=polygon)]})
+        self.assertEqual(response.status_code,201,response.content)
+        self.assertEqual(Plot.objects.get(number='TRAPEZOID').polygon,polygon)
+
+    def test_old_detection_cache_cannot_return_non_quadrilateral_suggestions(self):
+        from .detection_views import _layout_signature
+        self.login()
+        options = {'ocr':False}
+        old_key = 'plot-detection:v1:' + hashlib.sha256((_layout_signature(self.layout)+json.dumps(options,sort_keys=True)).encode()).hexdigest()
+        old_result = {'width':self.layout.width,'height':self.layout.height,'warnings':[],
+                      'candidates':[{'polygon':[[20,20],[80,20],[100,60],[80,100],[20,100]],'confidence':0.9,'source':'boundary'}]}
+        cache.set(old_key,old_result,300)
+        try:
+            response = self.post({'action':'detect','options':options})
+            self.assertEqual(response.status_code,200,response.content)
+            candidates = response.json()['candidates']
+            self.assertGreater(len(candidates),0)
+            self.assertTrue(all(len(candidate['polygon']) == 4 for candidate in candidates))
+        finally:
+            cache.delete(old_key)
 
     def test_import_rejects_existing_geometry_overlap(self):
         existing = self.existing_plot()

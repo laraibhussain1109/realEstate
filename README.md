@@ -1,6 +1,6 @@
 # Plot Matrix
 
-A Django 5.2 application for public residential project discovery and staff-managed plot availability. Visitors do not need an account. Project information, site content, leads, gallery photographs and testimonials are managed in Django admin. The SVG master-plan viewer and visual editor use the same image coordinate system, so polygons stay aligned when the page resizes. Authorized staff can generate boundary suggestions from uploaded plans, review and correct them, assign real plot numbers and explicit statuses, then import the selected polygons. Detection previews never create inventory automatically.
+A Django 5.2 application for public residential project discovery and staff-managed plot availability. Visitors do not need an account. Project information, site content, leads, gallery photographs and testimonials are managed in Django admin. The SVG master-plan viewer and visual editor use the same image coordinate system, so polygons stay aligned when the page resizes. Authorized staff can generate four-corner boundary suggestions from uploaded plans, review and correct them, assign real plot numbers and explicit statuses, then import the selected polygons. Detection previews never create inventory automatically.
 
 ## Local development
 
@@ -43,7 +43,7 @@ The demo is explicitly labeled **DEMO** and illustrates interaction only. Its av
 
 Availability is derived from database records. Enquiring does not reserve a plot. Staff changes write an audit record; the public viewer periodically re-fetches status. Internal remarks are excluded from public JSON. Draft and archived projects, hidden plots and unpublished testimonials are excluded from public discovery.
 
-Automatic detection uses the pinned OpenCV headless dependencies from `requirements.txt`, with no external image-analysis service or background worker. Optional number OCR uses a system Tesseract executable if available; otherwise assign numbers manually. No colour-based availability is imported automatically. Review all suggested boundaries and numbers against the source plan before publishing real inventory.
+Automatic detection uses the pinned OpenCV headless dependencies from `requirements.txt`, with no external image-analysis service or background worker. Optional number OCR uses a system Tesseract executable if available; otherwise assign numbers manually. Automatic scan and point suggestions and their imports are limited to four-corner plots, primarily squares and rectangles; supported slanted quadrilaterals retain their boundaries. Shapes with more or fewer corners should be handled with manual drawing rather than forced into a rectangle. No colour-based availability is imported automatically. Review all suggested boundaries and numbers against the source plan before publishing real inventory.
 
 ## Everyday administration
 

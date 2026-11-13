@@ -25,7 +25,7 @@
     root.querySelectorAll('[data-tool]').forEach(b=>b.classList.toggle('active',b.dataset.tool===value));
     if(value==='draw')message('Click each corner of the real plot boundary. Close the polygon when finished. Alt + drag to pan.');
     else if(value==='label')message('Click inside the selected plot to position its number label.');
-    else if(value==='detect-point')message('Click inside a missed plot to suggest its boundary. Alt + drag to pan. The suggestion will stay unsaved.');
+    else if(value==='detect-point')message('Click inside a missed four-sided plot to suggest its boundary. Alt + drag to pan. The suggestion will stay unsaved.');
     document.getElementById('detection-point').classList.toggle('active',value==='detect-point');
   };
   function select(plot) {
@@ -149,6 +149,7 @@
   const detectionStatuses=[['','Choose availability…'],['available','Available'],['booked','Booked'],['sold','Sold'],['blocked','Not for sale']];
   const node=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!=null)n.textContent=text;return n;};
   const confidence=c=>{const n=Number(c.confidence);return Number.isFinite(n)?Math.max(0,Math.min(1,n>1?n/100:n)):0;};
+  const isFourSided=c=>Array.isArray(c?.polygon)&&c.polygon.length===4;
   const makeSuggestion=(c,forceIncluded=false)=>({key:String(c.key||`suggestion-${Date.now()}-${Math.random().toString(36).slice(2)}`),polygon:clone(c.polygon),confidence:confidence(c),reason:String(c.reason||'Check the boundary against the image.'),number:String(c.suggested_number||'').trim(),status:'',included:forceIncluded||confidence(c)>=.85,details:{}});
   function detectionSummary() {
     const included=suggestions.filter(c=>c.included),missingNumbers=included.filter(c=>!c.number.trim()).length,missingStatuses=included.filter(c=>!c.status).length;
@@ -161,7 +162,7 @@
     const host=document.getElementById('detection-warnings');host.replaceChildren();
     warnings.forEach(w=>host.append(node('li',null,String(w))));host.hidden=!warnings.length;
   }
-  function detectionProgress(busy,text='Finding enclosed plot boundaries…') {
+  function detectionProgress(busy,text='Finding enclosed four-sided plots…') {
     detectionBusy=busy;review.setAttribute('aria-busy',String(busy));
     const progress=document.getElementById('detection-progress');progress.hidden=!busy;progress.textContent=text;
     ['editor-detect','detection-close','detection-point','detection-select-all','detection-select-none','detection-apply-status','detection-number'].forEach(id=>document.getElementById(id).disabled=busy);
@@ -202,6 +203,7 @@
   }
   function editCandidate(candidate,focus=true) {
     if(detectionBusy)return;
+    if(!isFourSided(candidate)){message('Automatic suggestions must have exactly four corners. Detect again or trace this plot manually.',true);return;}
     if(reviewingCandidate?.key===candidate.key)return;
     if(reviewingCandidate&&dirty&&!confirm('Discard the current unsaved suggestion edits? Choose Keep suggestion edits to retain them.'))return;
     if(!suspendedEditor){saveDraft();suspendedEditor={draft:snapshot(),undo:clone(undo),redo:clone(redo),dirty,view:{...map.view}};}
@@ -209,7 +211,7 @@
     fill({...candidate.details,number:candidate.number,status:candidate.status});setTool('select');
     if(focus)map.focus(points);renderReviewList();render();
     if(focus)stage.scrollIntoView({behavior:'smooth',block:'center'});
-    message('Editing an unsaved suggestion. Adjust its corners, number and availability, then Keep suggestion edits.');
+    message('Editing an unsaved four-sided suggestion. Adjust its four corners, number and availability, then Keep suggestion edits.');
   }
   function restoreEditor() {
     reviewingCandidate=null;const old=suspendedEditor;suspendedEditor=null;
@@ -219,7 +221,7 @@
   function keepCandidate() {
     if(!reviewingCandidate)return true;
     if(!form.reportValidity())return false;
-    if(!closed||points.length<3){message('Close a valid polygon before keeping the suggestion.',true);return false;}
+    if(!closed||points.length!==4){message('Automatic suggestions must have exactly four corners. Keep all four corners when adjusting this boundary.',true);return false;}
     const data=formData();if(!detectionStatuses.some(([s])=>s&&s===data.status)){message('Choose Available, Booked, Sold or Not for sale for this suggestion.',true);return false;}
     reviewingCandidate.polygon=clone(points);reviewingCandidate.number=data.number.trim();reviewingCandidate.status=data.status;
     const {note,...details}=data;reviewingCandidate.details={...details,label_position:clone(label)};
@@ -233,12 +235,14 @@
     if(reviewingCandidate){message('Keep your suggestion edits or return to the review list before detecting again.',true);return;}
     if(dirty){saveDraft();if(!confirm('You have an unsaved manual plot draft. Detection will preserve it as a local draft and will not save it. Continue?'))return;}
     if(suggestions.length&&!confirm('Replace the current unsaved detection suggestions with a new scan?'))return;
-    review.hidden=false;detectionWarnings();detectionProgress(true);message('Detecting plot boundaries. Review is required before anything can be imported.');
+    review.hidden=false;detectionWarnings();detectionProgress(true);message('Detecting four-sided plots. Review is required before anything can be imported.');
     try {
       const data=await post({action:'detect',options:{}},detectionApi);
-      suggestions=(data.candidates||[]).filter(c=>Array.isArray(c.polygon)&&c.polygon.length>=3).map(c=>makeSuggestion(c));layoutSignature=data.layout_signature||null;
-      detectionWarnings(data.warnings||[]);renderReviewList();render();
-      message(suggestions.length?`${suggestions.length} boundary suggestions found. Review numbers and assign availability before importing.`:'No boundaries were detected. Try clicking inside a missed plot or drawing its boundary manually.');
+      const candidates=Array.isArray(data.candidates)?data.candidates:[],accepted=candidates.filter(isFourSided),skipped=candidates.length-accepted.length;
+      suggestions=accepted.map(c=>makeSuggestion(c));layoutSignature=data.layout_signature||null;
+      const warnings=[...(data.warnings||[])];if(skipped)warnings.push(`${skipped} suggestion(s) without exactly four corners were skipped. Detect again for four-sided plots, or trace those plots manually.`);
+      detectionWarnings(warnings);renderReviewList();render();
+      message(suggestions.length?`${suggestions.length} four-sided plot suggestion(s) found. Review numbers and assign availability before importing.`:'No four-sided plots were detected. Try clicking inside a missed four-sided plot or draw its boundary manually.');
     }catch(error){detectionWarnings([error.message]);message(error.message,true);}finally{detectionProgress(false);}
   });
   document.getElementById('detection-select-all').addEventListener('click',()=>{suggestions.forEach(c=>c.included=true);renderReviewList();render();});
@@ -260,15 +264,16 @@
     setTool(tool==='detect-point'?'select':'detect-point');stage.scrollIntoView({behavior:'smooth',block:'center'});
   });
   async function detectPoint([x,y]) {
-    if(detectionBusy)return;review.hidden=false;detectionProgress(true,'Looking for a boundary around the selected point…');
+    if(detectionBusy)return;review.hidden=false;detectionProgress(true,'Looking for a four-sided plot around the selected point…');
     try {
       const data=await post({action:'point',x,y},detectionApi),candidate=data.candidate||(data.candidates||[])[0];
       if(layoutSignature&&data.layout_signature&&layoutSignature!==data.layout_signature)throw Error('The layout image changed. Discard these suggestions and detect the new revision before importing.');
       layoutSignature=data.layout_signature||layoutSignature;detectionWarnings(data.warnings||[]);
-      if(candidate?.polygon?.length>=3){
+      if(isFourSided(candidate)){
         const fingerprint=JSON.stringify(candidate.polygon);if(suggestions.some(c=>JSON.stringify(c.polygon)===fingerprint))message('That boundary is already in the review list.');
-        else {const suggestion=makeSuggestion(candidate,true);if(suggestions.some(c=>c.key===suggestion.key))suggestion.key+=`-point-${Date.now()}`;suggestions.push(suggestion);renderReviewList();render();message('Boundary suggestion added. Review it and explicitly assign its number and availability.');}
-      }else message('No enclosed plot boundary was found there. Click further inside the plot or trace it manually.',true);
+        else {const suggestion=makeSuggestion(candidate,true);if(suggestions.some(c=>c.key===suggestion.key))suggestion.key+=`-point-${Date.now()}`;suggestions.push(suggestion);renderReviewList();render();message('Four-sided plot suggestion added. Review it and explicitly assign its number and availability.');}
+      }else if(candidate){const text='The detected region does not have exactly four corners and was skipped. Try another point inside a four-sided plot, or trace it manually.';message(text,true);detectionWarnings([...(data.warnings||[]),text]);}
+      else message('No enclosed four-sided plot was found there. Click further inside the plot or trace it manually.',true);
     }catch(error){message(error.message,true);detectionWarnings([error.message]);}finally{setTool('select');detectionProgress(false);}
   }
   document.getElementById('detection-close').addEventListener('click',()=>{
@@ -278,6 +283,7 @@
   document.getElementById('detection-import').addEventListener('click',async()=>{
     if(detectionBusy)return;if(reviewingCandidate&&!keepCandidate())return;
     const included=suggestions.filter(c=>c.included);if(!included.length){message('Select at least one suggestion to import.',true);return;}
+    if(included.some(c=>!isFourSided(c))){message('Only suggestions with exactly four corners can be imported. Exclude other shapes and detect again or trace them manually.',true);return;}
     if(included.some(c=>!c.number.trim()||!c.status)){message('Every selected suggestion needs a plot number and an explicitly assigned availability status.',true);return;}
     const used=new Set(plots.map(p=>String(p.number).trim().toLowerCase()));
     for(const c of included){const number=c.number.trim().toLowerCase();if(used.has(number)){message(`Plot number ${c.number} is duplicated. Correct it or exclude that suggestion before importing.`,true);return;}used.add(number);}

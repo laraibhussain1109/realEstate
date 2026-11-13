@@ -69,8 +69,11 @@ def _overlap(first, second):
 def _review_result(layout, result):
     """Do not suggest drawing over inventory already annotated on this revision."""
     existing = list(layout.plots.values_list('polygon', flat=True))
-    candidates, skipped = [], 0
+    candidates, skipped, non_quadrilaterals = [], 0, 0
     for index, candidate in enumerate(result.get('candidates', [])):
+        if len(candidate.get('polygon', [])) != 4:
+            non_quadrilaterals += 1
+            continue
         if any(_overlap(candidate['polygon'], polygon) for polygon in existing):
             skipped += 1
             continue
@@ -78,6 +81,8 @@ def _review_result(layout, result):
         region_key = hashlib.sha256(json.dumps(geometry).encode()).hexdigest()[:20]
         candidates.append({**candidate, 'key': f'region-{region_key}'})
     warnings = list(result.get('warnings', []))
+    if non_quadrilaterals:
+        warnings.append(f'{non_quadrilaterals} region(s) without four clear corners were excluded. Automatic drawing supports four-sided plots only.')
     if skipped:
         warnings.append(f'{skipped} detected region(s) overlapping saved plots were excluded. Existing plots were preserved.')
     return {**result, 'ok': True, 'candidates': candidates, 'warnings': warnings,
@@ -114,6 +119,16 @@ def _candidate_plot(layout, values):
     if not plot.slug:
         raise ValueError('Plot numbers must include a letter or number to create their public links.')
     plot.full_clean()
+    if len(plot.polygon) != 4:
+        raise ValueError('Automatic drawing accepts four-sided plots only. Each imported boundary must have exactly four corners.')
+    for index, corner in enumerate(plot.polygon):
+        previous, following = plot.polygon[index-1], plot.polygon[(index+1) % 4]
+        incoming = (previous[0]-corner[0], previous[1]-corner[1])
+        outgoing = (following[0]-corner[0], following[1]-corner[1])
+        cross = incoming[0]*outgoing[1] - incoming[1]*outgoing[0]
+        lengths = math.hypot(*incoming)*math.hypot(*outgoing)
+        if abs(cross) <= max(1.0, lengths)*1e-8:
+            raise ValueError('Automatic drawing requires four real corners. Three-sided boundaries with an extra point on an edge are not accepted.')
     return plot
 
 
@@ -143,7 +158,7 @@ def detection_api(request, pk):
             else:
                 # Cache only suggestions, never availability or staff-saved inventory.
                 fingerprint = _layout_signature(layout)
-                key = 'plot-detection:v1:' + hashlib.sha256((fingerprint+json.dumps(options,sort_keys=True)).encode()).hexdigest()
+                key = 'plot-detection:v2:four-sided:' + hashlib.sha256((fingerprint+json.dumps(options,sort_keys=True)).encode()).hexdigest()
                 result = cache.get(key)
                 if result is None:
                     with layout.image.open('rb') as source:
