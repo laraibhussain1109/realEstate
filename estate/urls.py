@@ -1,5 +1,5 @@
 from django.urls import path
-from . import views
+from . import views, detection_views
 
 urlpatterns = [
     path('', views.home, name='home'),
@@ -17,6 +17,7 @@ urlpatterns = [
     path('pages/<slug:slug>/', views.page, name='page'),
     path('api/projects/', views.project_api, name='project_api'),
     path('api/projects/<slug:slug>/plots/', views.plot_api, name='plot_api'),
+    path('api/layouts/<int:pk>/detect/', detection_views.detection_api, name='detection_api'),
     path('api/layouts/<int:pk>/plots/', views.editor_api, name='editor_api'),
     path('api/enquiries/', views.enquiry_api, name='enquiry_api'),
     path('admin/estate/projectlayout/<int:pk>/editor/', views.layout_editor, name='layout_editor'),

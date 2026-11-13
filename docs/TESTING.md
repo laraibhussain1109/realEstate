@@ -12,6 +12,18 @@ The suite creates an isolated test database and checks public/private publicatio
 
 Use a valid private production secret and production environment variables when running `python manage.py check --deploy`. That check does not replace deployment smoke checks.
 
+## Automatic boundary detection and imports
+
+Run the focused integration tests against real synthetic raster images:
+
+```bash
+python manage.py test estate.test_detection_api
+```
+
+These tests verify that detection and point suggestions do not write inventory, that public availability remains unchanged until explicit import, and that active staff need both add-plot and change-plot permissions. They also cover CSRF, draft layout privacy, explicit statuses, source-image freshness, atomic validation, duplicate numbers, existing-record preservation, interior overlap rejection, shared-edge handling, stable suggestion identities across scan/point review and batch limits. Test images are temporary and removed after the suite; the tests do not depend on a detector mock or external image-analysis service.
+
+Before using real inventory, also test a representative copy of the actual plan in a draft revision: review suggested boundaries, remove roads/parks, correct plot numbers, assign verified statuses and import a small batch. Reload the editor and public page to confirm the correct revision and database records appear. Check an intentionally invalid batch leaves existing inventory unchanged. Computer vision and optional OCR accuracy vary with the image; a passing synthetic test is not a survey or inventory verification.
+
 ## Optional real-browser map test
 
 Start the local server and opt-in demonstration content first:

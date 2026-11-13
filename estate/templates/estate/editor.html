@@ -5,8 +5,8 @@
 {% block content %}
 <a href="{% url 'admin:estate_projectlayout_changelist' %}" class="pm-editor-crumb">← Back to layout revisions</a>
 <div id="plot-editor" class="pm-explorer pm-editor" aria-label="Visual plot editor">
-  <div class="pm-editor-title"><h1>Society plot editor</h1><p>Trace the actual plot boundaries on this revision. Changes are published only when you save a plot.</p></div>
-  <div class="pm-map-toolbar"><div class="pm-map-title"><span class="pm-eyebrow">MANUAL BOUNDARY ANNOTATION</span><h3>{{ project.name }}</h3></div><input id="editor-search" class="pm-search" type="search" placeholder="Find plot number…" aria-label="Find a plot by number"></div>
+  <div class="pm-editor-title"><h1>Society plot editor</h1><p>Detect plot boundaries for review, or trace them manually. Nothing is imported until you confirm it.</p></div>
+  <div class="pm-map-toolbar"><div class="pm-map-title"><span class="pm-eyebrow">SOCIETY LAYOUT ANNOTATION</span><h3>{{ project.name }}</h3></div><div class="pm-editor-main-actions"><input id="editor-search" class="pm-search" type="search" placeholder="Find plot number…" aria-label="Find a plot by number"><button type="button" id="editor-detect" class="pm-button pm-detect-button">◇ Auto-detect plots</button></div></div>
   <div class="pm-editor-toolbar" role="toolbar" aria-label="Plot drawing tools">
     <button type="button" class="pm-button active" data-tool="select">↖ Select / pan</button>
     <button type="button" class="pm-button" data-tool="draw">◇ Draw a plot</button>
@@ -17,6 +17,20 @@
     <button type="button" class="pm-button" id="editor-focus">Zoom to plot</button>
     <button type="button" class="pm-button" id="editor-draft">Save local draft</button>
   </div>
+  <section id="detection-review" class="pm-detection" aria-label="Review detected plot boundaries" hidden>
+    <div class="pm-detection-heading"><div><span class="pm-eyebrow">SUGGESTIONS · NOT SAVED</span><h2>Review detected boundaries <span id="detection-count"></span></h2><p>Map colors do not set availability. Check each boundary and plot number, then explicitly assign a status before importing.</p></div><button type="button" id="detection-close" class="pm-button">Discard suggestions</button></div>
+    <div id="detection-progress" class="pm-detection-progress" role="status" aria-live="polite" hidden>Finding enclosed plot boundaries…</div>
+    <ul id="detection-warnings" class="pm-detection-warnings" aria-label="Detection guidance" hidden></ul>
+    <div class="pm-detection-tools">
+      <button type="button" id="detection-select-all" class="pm-button">Select all</button><button type="button" id="detection-select-none" class="pm-button">Clear selection</button>
+      <label>Assign selected plots<select id="detection-bulk-status" aria-label="Availability for selected suggestions"><option value="">Choose availability…</option><option value="available">Available</option><option value="booked">Booked</option><option value="sold">Sold</option><option value="blocked">Not for sale</option></select></label><button type="button" id="detection-apply-status" class="pm-button">Apply status</button>
+      <button type="button" id="detection-point" class="pm-button">⌖ Find a missed plot</button>
+    </div>
+    <details class="pm-detection-numbering"><summary>Number unlabelled suggestions</summary><div><label>Prefix<input id="detection-prefix" value="" maxlength="20" placeholder="e.g. A-" aria-label="Plot number prefix"></label><label>Start at<input id="detection-start" type="number" min="1" max="999999" value="1" aria-label="First plot number"></label><button type="button" id="detection-number" class="pm-button">Number selected missing numbers</button><small>Existing numbers stay unchanged. Verify the assigned sequence against the plan.</small></div></details>
+    <div id="detection-empty" class="pm-detection-empty" hidden>No plot boundaries were found. Try “Find a missed plot” and click inside a plot, or trace it using Draw a plot. A clear, high-resolution image with enclosed plot outlines gives better results.</div>
+    <div id="detection-list" class="pm-detection-list" aria-label="Detected plot suggestions"></div>
+    <div class="pm-detection-bottom"><p id="detection-summary" aria-live="polite"></p><div><button type="button" id="detection-back" class="pm-button" hidden>Back to suggestions</button><button type="button" id="detection-import" class="pm-button pm-detect-button">Import selected plots</button></div></div>
+  </section>
   <div class="pm-map-main"><div id="editor-stage" class="pm-stage"></div>
     <aside class="pm-details">
       <span class="pm-eyebrow" id="editor-heading">NEW PLOT</span>
@@ -25,7 +39,7 @@
         {% csrf_token %}
         <div class="pm-editor-grid">
           <div><label for="plot-number">Plot number *</label><input id="plot-number" name="number" required maxlength="30" autocomplete="off"></div>
-          <div><label for="plot-status">Status</label><select id="plot-status" name="status"><option value="available">Available</option><option value="booked">Booked</option><option value="sold">Sold</option><option value="blocked">Not for sale</option><option value="hidden">Hidden</option></select></div>
+          <div><label for="plot-status">Status</label><select id="plot-status" name="status" required><option value="">Choose availability…</option><option value="available">Available</option><option value="booked">Booked</option><option value="sold">Sold</option><option value="blocked">Not for sale</option><option value="hidden">Hidden</option></select></div>
           <div><label for="plot-area">Area</label><input id="plot-area" name="area" type="number" min="0.01" step="0.01"></div>
           <div><label for="plot-unit">Area unit</label><select id="plot-unit" name="area_unit"><option value="sqyd">Square yards</option><option value="sqft">Square feet</option><option value="sqm">Square metres</option></select></div>
           <div><label for="plot-length">Length (ft)</label><input id="plot-length" name="length" type="number" min="0.01" step="0.01"></div>

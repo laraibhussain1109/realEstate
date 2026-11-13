@@ -38,7 +38,25 @@ Add a project layout, choose the project and upload a clear raster image. JPEG, 
 
 PDFs can be provided as downloadable project documents. Where the upload interface accepts a PDF for the layout, follow its conversion guidance. Otherwise export the relevant PDF page to a good-quality PNG first. Conversion is an explicit preparation step, not work performed on every page visit. PDF document uploads must be ordinary, unencrypted PDFs with no scripts, forms or embedded files. If a legitimate document is rejected, export a plain copy from a trusted source; do not disable validation. File validation is not a malware-scanning guarantee.
 
-## Draw plot boundaries
+## Suggest plot boundaries automatically
+
+Open the saved layout's visual editor and use its automatic boundary detection controls. Uploading or analysing a plan does **not** create plot records or change availability. Detection looks for enclosed regions in the raster image and returns temporary outlines for review. Clear, high-resolution plans with distinct boundary lines work best.
+
+1. Save the master-plan image and open its visual editor. Prepare a **draft layout revision** if the inventory should remain private while you work.
+2. Run automatic detection. Review the suggested outlines over the original image. Adjust the available detection controls and rerun if outlines are missing or too broad.
+3. Remove suggestions covering roads, parks, labels, background areas or several plots joined together. Automatic exclusions are visual suggestions, not confirmation of land use or survey boundaries.
+4. Review each plot number. If optional OCR is available, it can suggest printed numbers; correct every uncertain or duplicate number before saving. OCR is not required: numbers can be entered manually.
+5. Set an explicit availability status for each accepted plot. The plan's colours and text do not establish live availability. Use **Not for sale / blocked** until staff have verified the inventory when appropriate.
+6. Import the reviewed selections. Only this explicit import creates database plot records. An invalid number, invalid boundary, overlap with existing inventory or another validation error rejects the batch; it does not partly import it or overwrite existing plots. Adjacent plots can share boundary edges; their interiors must not overlap.
+7. Check the saved records against the original image. The initial availability choice and importing staff member are recorded in the status history. On an active public layout they appear in the public viewer after import; records on a draft layout remain private until that revision is activated and published.
+
+For a boundary missed by automatic detection, use point-assisted detection on the enclosed plot where available. Review that outline in the same way. If the image has faint or broken lines, merged shapes, decorative fills or illegible labels, draw or correct its polygon manually. Suggestions can be inaccurate and must be checked before real inventory is published.
+
+A detection preview belongs to the source image analysed. If the image changes before import, the server rejects the stale preview; analyse the current image again. Existing geometry must still be moved to a new layout revision before replacing its image.
+
+Boundary detection runs locally on demand using OpenCV; it does not send the layout to an external AI service. Optional OCR uses a locally available Tesseract executable. Missing OCR affects suggested numbering only; boundary detection and manual numbering remain available.
+
+## Draw or correct plot boundaries manually
 
 1. Follow the layout's **Open visual editor** link.
 2. Zoom or pan to the plot.

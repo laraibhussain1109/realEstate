@@ -1,6 +1,6 @@
 # Plot Matrix
 
-A Django 5.2 application for public residential project discovery and staff-managed plot availability. Visitors do not need an account. Project information, site content, leads, gallery photographs and testimonials are managed in Django admin. The SVG master-plan viewer and visual editor use the same image coordinate system, so polygons stay aligned when the page resizes.
+A Django 5.2 application for public residential project discovery and staff-managed plot availability. Visitors do not need an account. Project information, site content, leads, gallery photographs and testimonials are managed in Django admin. The SVG master-plan viewer and visual editor use the same image coordinate system, so polygons stay aligned when the page resizes. Authorized staff can generate boundary suggestions from uploaded plans, review and correct them, assign real plot numbers and explicit statuses, then import the selected polygons. Detection previews never create inventory automatically.
 
 ## Local development
 
@@ -34,12 +34,16 @@ The demo is explicitly labeled **DEMO** and illustrates interaction only. Its av
 - `estate/models.py`: company content, locations, projects, layout revisions, plots, availability history, galleries, testimonials and leads.
 - `estate/admin.py`: company administration and visual-editor links.
 - `estate/views.py`: public pages, read-only discovery APIs, lead submission and permission-protected layout writes.
+- `estate/detection_views.py`: permission-protected boundary preview and validated, atomic polygon imports.
+- `estate/plot_detection.py`: local image boundary detection and optional OCR-assisted number suggestions.
 - `estate/templates/estate/`: server-rendered pages and map editor.
 - `estate/static/estate/`: CSS, native JavaScript and supplied brand assets. No frontend build is needed.
 - `estate/management/commands/`: repeatable content initialization and optional demo setup.
-- `estate/tests.py`: integration, validation and access-control tests.
+- `estate/tests.py` and `estate/test_*.py`: integration, validation, access-control and boundary-detection tests.
 
 Availability is derived from database records. Enquiring does not reserve a plot. Staff changes write an audit record; the public viewer periodically re-fetches status. Internal remarks are excluded from public JSON. Draft and archived projects, hidden plots and unpublished testimonials are excluded from public discovery.
+
+Automatic detection uses the pinned OpenCV headless dependencies from `requirements.txt`, with no external image-analysis service or background worker. Optional number OCR uses a system Tesseract executable if available; otherwise assign numbers manually. No colour-based availability is imported automatically. Review all suggested boundaries and numbers against the source plan before publishing real inventory.
 
 ## Everyday administration
 

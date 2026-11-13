@@ -329,6 +329,7 @@ def layout_editor(request, pk):
     return render(request, 'estate/editor.html', {
         'layout': layout, 'project': layout.project,
         'editor_config': {'api': reverse('editor_api', args=[layout.pk]),
+                          'detection_api': reverse('detection_api', args=[layout.pk]),
                           'layout': _layout_data(layout),
                           'project': {'name': layout.project.name, 'slug': layout.project.slug},
                           'plots': [serialize_plot(p, staff=True) for p in layout.plots.all()]},
